@@ -2,20 +2,21 @@
 
 from threading import Thread
 import serial
+from serial import Serial
 import time
 import collections
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import struct
 import copy
-import pandas as pd
+#import pandas as pd
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import tkinter as Tk
 from tkinter.ttk import Frame
-
+import math
 
 class serialPlot:
-    def __init__(self, serialPort='/dev/ttyUSB0', serialBaud=38400, plotLength=100, dataNumBytes=2, numPlots=1):
+    def __init__(self, serialPort='/dev/ttyUSB0', serialBaud=115200, plotLength=100, dataNumBytes=2, numPlots=1):
         self.port = serialPort
         self.baud = serialBaud
         self.plotMaxLength = plotLength
@@ -58,12 +59,14 @@ class serialPlot:
         self.previousTimer = currentTimer
         timeText.set_text('t = ' + str(self.plotTimer) + 'ms')
         privateData = copy.deepcopy(
-            self.rawData[:])  # so that the 3 values in our plots will be synchronized to the same sample time
+            self.rawData[:])  # so that the 2 values in our plots will be synchronized to the same sample time
         for i in range(self.numPlots):
             data = privateData[(i * self.dataNumBytes):(self.dataNumBytes + i * self.dataNumBytes)]
-            value, = struct.unpack(self.dataType, data)
+            value, = struct.unpack(self.dataType, data) 
             self.data[i].append(value)  # we get the latest data point and append it to our array
             lines[i].set_data(range(self.plotMaxLength), self.data[i])
+            print(self.data[i])
+            print(type(self.data[i]))
             lineValueText[i].set_text('[' + lineLabel[i] + '] = ' + str(value))
         # self.csvData.append([self.data[0][-1], self.data[1][-1], self.data[2][-1]])
 
@@ -74,7 +77,10 @@ class serialPlot:
             self.serialConnection.readinto(self.rawData)
             self.isReceiving = True
             # print(self.rawData)
-
+    
+    def sendSerialData(self, data):
+        self.serialConnection.write(data.encode('utf-8'))
+    
     def close(self):
         self.isRun = False
         self.thread.join()
@@ -128,7 +134,9 @@ class Window(Frame):
         new_val = int(self.entry1.get()) + 1
         print(new_val)
         self.entry1.delete(0, 3)
-        self.entry1.insert(0, str(new_val))
+        self.entry1.insert(0, str(new_val)) 
+        self.sendFlowToMCU()
+        print(self.entry1.get())
         return
 
     def down_flow(self):
@@ -136,12 +144,17 @@ class Window(Frame):
         print(new_val)
         self.entry1.delete(0, 3)
         self.entry1.insert(0, str(new_val))
+        self.sendFlowToMCU()
+        print(self.entry1.get())
         return
+
     def up_flow_p(self):
         new_val = int(self.entry2.get()) + 1
         print(new_val)
         self.entry2.delete(0, 3)
         self.entry2.insert(0, str(new_val))
+        self.sendPressToMCU()
+        print(self.entry2.get())
         return
 
     def down_flow_p(self):
@@ -149,11 +162,18 @@ class Window(Frame):
         print(new_val)
         self.entry2.delete(0, 3)
         self.entry2.insert(0, str(new_val))
+        self.sendPressToMCU()
+        print(self.entry2.get())
         return
 
-    def sendFactorToMCU(self):
+    def sendSerialData(self, data):
+        self.serialReference.write(data.encode('utf-8'))
+
+    def sendFlowToMCU(self):
         self.serialReference.sendSerialData(self.entry1.get() + '%')  # '%' is our ending marker
 
+    def sendPressToMCU(self):
+        self.serialReference.sendSerialData(self.entry2.get() + '%')  # '%' is our ending marker
 
 def main():
     # portName = 'COM5'
@@ -169,9 +189,9 @@ def main():
     # plotting starts below
     pltInterval = 20  # Period at which the plot animation updates [ms]
     xmin = 0
-    xmax = maxPlotLength
-    ymin = -30
-    ymax = 120
+    xmax = maxPlotLength - 30 
+    ymin = 0
+    ymax = 70
     fig = plt.figure(figsize=(8, 6))
     ax = plt.axes(xlim=(xmin, xmax), ylim=(float(ymin - (ymax - ymin) / 10), float(ymax + (ymax - ymin) / 10)))
     #ax.set_title('Arduino Accelerometer')
@@ -189,7 +209,7 @@ def main():
     lineValueText = []
     for i in range(numPlots):
         lines.append(ax.plot([], [], style[i], label=lineLabel[i])[0])
-        lineValueText.append(ax.text(0.10 + i * 0.4 , 0.10, '',bbox=dict(facecolor='red', alpha=0.5), fontsize=15, transform=ax.transAxes))
+        lineValueText.append(ax.text(0.85, 0.75-i*0.25, '',bbox=dict(facecolor='red', alpha=0.5), fontsize=15, transform=ax.transAxes))
     plt.rcParams['toolbar'] = 'None'
     anim = animation.FuncAnimation(fig, s.getSerialData, fargs=(lines, lineValueText, lineLabel, timeText),
                                    interval=pltInterval)  # fargs has to be a tuple
